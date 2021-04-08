@@ -43,7 +43,8 @@ def weights_init(m):
         nn.init.xavier_uniform_(m.weight.data)
         if m.bias.data is not None:
             nn.init.constant_(m.bias.data, 0.)
-        
+
+
 class MultiHeadedAttention(nn.Module):
     def __init__(self, d_model, h, dropout=0.1):
         "Take in model size and number of heads."
