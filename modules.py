@@ -41,7 +41,7 @@ def attention(query, key, value, mask=None, dropout=None):
 def weights_init(m):
     if isinstance(m, nn.Linear):
         nn.init.xavier_uniform_(m.weight.data)
-        if m.bias.data:
+        if m.bias.data is not None:
             nn.init.constant_(m.bias.data, 0.)
         
 class MultiHeadedAttention(nn.Module):
@@ -58,9 +58,14 @@ class MultiHeadedAttention(nn.Module):
         self.apply(weights_init)
     
     def forward(self, query, key, value, mask=None):
+        mask = mask[None, ...]
         if mask is not None:
             # Same mask applied to all h heads.
             mask = mask.unsqueeze(1)
+
+        query = query.transpose(1, 0)
+        key = key.transpose(1, 0)
+        value = value.transpose(1, 0)
         nbatches = query.size(0)
         
         # 1) Do all the linear projections in batch from d_model => h x d_k 
@@ -68,14 +73,15 @@ class MultiHeadedAttention(nn.Module):
             [l(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
              for l, x in zip(self.linears, (query, key, value))]
         
-        # 2) Apply attention on all the projected vectors in batch. 
+        # 2) Apply attention on all the projected vectors in batch.
         x, self.attn = attention(query, key, value, mask=mask, 
                                  dropout=self.dropout)
         
         # 3) "Concat" using a view and apply a final linear. 
         x = x.transpose(1, 2).contiguous() \
              .view(nbatches, -1, self.h * self.d_k)
-        return self.linears[-1](x)
+
+        return self.linears[-1](x).transpose(1, 0)
 
 
 
@@ -92,11 +98,10 @@ class TransformerEncoderLayer(nn.Module):
         self.norm2 = LayerNorm(d_model)
         self.dropout1 = nn.Dropout(dropout)
         self.dropout2 = nn.Dropout(dropout)
-        self.activation = nn.ReLu()
+        self.activation = nn.ReLU()
 
-    def forward(self, src, src_mask=None, src_key_padding_mask=None):
-        src2 = self.self_attn(src, src, src, attn_mask=src_mask,
-                              key_padding_mask=src_key_padding_mask)[0]
+    def forward(self, src, src_mask=None):
+        src2 = self.self_attn(src, src, src, src_mask)
         src = src + self.dropout1(src2)
         src = self.norm1(src)
         src2 = self.linear2(self.dropout(self.activation(self.linear1(src))))
@@ -112,10 +117,10 @@ class TransformerEncoder(nn.Module):
         self.num_layers = num_layers
         self.norm = norm
 
-    def forward(self, src, mask=None, src_key_padding_mask=None):
+    def forward(self, src, mask=None): #, src_key_padding_mask=None):
         output = src
         for mod in self.layers:
-            output = mod(output, src_mask=mask, src_key_padding_mask=src_key_padding_mask)
+            output = mod(output, src_mask=mask) #, src_key_padding_mask=src_key_padding_mask)
         if self.norm is not None:
             output = self.norm(output)
         return output
